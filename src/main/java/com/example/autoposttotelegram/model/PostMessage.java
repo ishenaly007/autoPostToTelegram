@@ -2,6 +2,8 @@ package com.example.autoposttotelegram.model;
 
 import lombok.Data;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -13,6 +15,7 @@ public class PostMessage {
 
     @ManyToOne
     @JoinColumn(name = "channel_id")
+    @JsonIgnore // Игнорируем канал при сериализации
     private Channel channel;
 
     private String content;

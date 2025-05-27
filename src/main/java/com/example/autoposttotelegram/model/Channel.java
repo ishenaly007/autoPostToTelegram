@@ -2,6 +2,7 @@ package com.example.autoposttotelegram.model;
 
 import lombok.Data;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Data
@@ -14,5 +15,6 @@ public class Channel {
 
     @ManyToOne
     @JoinColumn(name = "user_id")
+    @JsonIgnore // Игнорируем пользователя при сериализации
     private User user;
 }

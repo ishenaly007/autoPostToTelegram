@@ -21,31 +21,53 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
-    @Operation(summary = "Авторизация пользователя", description = "Авторизует пользователя по Telegram ID и паролю, заданному через команду /password в боте.")
+    @Operation(summary = "Авторизация пользователя", description = "Авторизует пользователя по Telegram username и паролю.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Успешная авторизация"),
-            @ApiResponse(responseCode = "400", description = "Неверный формат Telegram ID"),
-            @ApiResponse(responseCode = "401", description = "Неверный Telegram ID или пароль")
+            @ApiResponse(responseCode = "400", description = "Неверный формат Telegram username"),
+            @ApiResponse(responseCode = "401", description = "Неверный Telegram username или пароль")
     })
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
         String telegramUsername = loginRequest.getUsername().replace("@", "");
-        Long telegramId;
-        try {
-            telegramId = Long.parseLong(telegramUsername);
-        } catch (NumberFormatException e) {
-            return ResponseEntity.badRequest().body("Неверный формат Telegram ID. Используйте @<число>, например @123456789");
+        if (telegramUsername.isEmpty()) {
+            return ResponseEntity.badRequest().body("Неверный формат Telegram username. Используйте @<username>, например @ExampleUser");
         }
 
-        Optional<User> user = userRepository.findByTelegramIdAndPassword(telegramId, loginRequest.getPassword());
+        Optional<User> user = userRepository.findByTelegramUsernameAndPassword(telegramUsername, loginRequest.getPassword());
         if (user.isPresent()) {
-            return ResponseEntity.ok(new LoginResponse(user.get().getId(), user.get().getTelegramId()));
+            return ResponseEntity.ok(new LoginResponse(user.get().getId(), telegramUsername));
         } else {
-            return ResponseEntity.status(401).body("Неверный Telegram ID или пароль");
+            return ResponseEntity.status(401).body("Неверный Telegram username или пароль");
         }
     }
 }
 
+class LoginResponse {
+    private Long userId;
+    private String telegramUsername;
+
+    public LoginResponse(Long userId, String telegramUsername) {
+        this.userId = userId;
+        this.telegramUsername = telegramUsername;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public String getTelegramUsername() {
+        return telegramUsername;
+    }
+
+    public void setTelegramUsername(String telegramUsername) {
+        this.telegramUsername = telegramUsername;
+    }
+}
 class LoginRequest {
     private String username;
     private String password;
@@ -65,30 +87,5 @@ class LoginRequest {
     public void setPassword(String password) {
         this.password = password;
     }
-}
 
-class LoginResponse {
-    private Long userId;
-    private Long telegramId;
-
-    public LoginResponse(Long userId, Long telegramId) {
-        this.userId = userId;
-        this.telegramId = telegramId;
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public void setUserId(Long userId) {
-        this.userId = userId;
-    }
-
-    public Long getTelegramId() {
-        return telegramId;
-    }
-
-    public void setTelegramId(Long telegramId) {
-        this.telegramId = telegramId;
-    }
 }
