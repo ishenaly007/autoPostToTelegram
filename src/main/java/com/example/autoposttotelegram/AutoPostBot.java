@@ -8,7 +8,6 @@ import com.example.autoposttotelegram.repository.PostMessageRepository;
 import com.example.autoposttotelegram.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -61,21 +60,42 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        if (!update.hasMessage()) {
+            return;
+        }
+
+        Long chatId = update.getMessage().getChatId();
+        Long telegramId = update.getMessage().getFrom().getId();
+        String telegramUsername = update.getMessage().getFrom().getUserName() != null
+                ? update.getMessage().getFrom().getUserName().replace("@", "")
+                : null;
+
+        // Поиск или создание пользователя по telegramId
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseGet(() -> {
+                    User newUser = new User();
+                    newUser.setTelegramId(telegramId);
+                    newUser.setTelegramUsername(telegramUsername != null ? telegramUsername : "unknown_" + telegramId);
+                    return userRepository.save(newUser);
+                });
+
+        // Обновляем username, если он изменился
+        if (telegramUsername != null && !telegramUsername.equals(user.getTelegramUsername())) {
+            user.setTelegramUsername(telegramUsername);
+            userRepository.save(user);
+        }
+
+        // Проверка на отсутствие username, если требуется
+        if (telegramUsername == null && update.getMessage().hasText()) {
+            try {
+                sendMessage(chatId, "Внимание: ваш Telegram username не установлен. Некоторые функции могут быть ограничены. Установите username в настройках Telegram.", getMainMenuKeyboard());
+            } catch (TelegramApiException e) {
+                e.printStackTrace();
+            }
+        }
+
         if (update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
-            Long chatId = update.getMessage().getChatId();
-            String telegramUsername = update.getMessage().getFrom().getUserName();
-
-            if (telegramUsername == null) {
-                try {
-                    sendMessage(chatId, "Ошибка: ваш Telegram username не установлен. Установите username в настройках Telegram.", getMainMenuKeyboard());
-                } catch (TelegramApiException e) {
-                    e.printStackTrace();
-                }
-                return;
-            }
-
-            telegramUsername = telegramUsername.replace("@", "");
 
             try {
                 // Обработка команд и кнопок
@@ -88,7 +108,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
                         sendMessage(chatId, "Введите ID канала в формате: @ChannelName", getMainMenuKeyboard());
                         break;
                     case "Удалить канал":
-                        handleDeleteChannel(update, telegramUsername);
+                        handleDeleteChannel(update, user);
                         break;
                     case "Создать пост":
                         sendMessage(chatId, "Введите текст поста и дату публикации в формате: <текст> dd.MM.yyyy HH:mm\nИли отправьте медиа с подписью в таком же формате.", getMainMenuKeyboard());
@@ -98,21 +118,18 @@ public class AutoPostBot extends TelegramLongPollingBot {
                         break;
                     default:
                         if (messageText.startsWith("/addchannel") || messageText.startsWith("@")) {
-                            handleAddChannel(update, telegramUsername);
+                            handleAddChannel(update, user);
                         } else if (messageText.startsWith("/del")) {
-                            handleDeleteChannel(update, telegramUsername);
+                            handleDeleteChannel(update, user);
                         } else if (messageText.startsWith("/createpost")) {
-                            handleCreatePost(update, telegramUsername);
+                            handleCreatePost(update, user);
                         } else if (messageText.startsWith("/password")) {
-                            handleSetPassword(update, telegramUsername);
+                            handleSetPassword(update, user);
                         } else {
-                            // Проверяем, является ли сообщение продолжением после кнопки "Создать пост" или "Установить пароль"
-                            User user = userRepository.findByTelegramUsername(telegramUsername)
-                                    .orElseThrow(() -> new IllegalArgumentException("Пользователь не найден!"));
                             if (isWaitingForPost(chatId, user)) {
-                                handleCreatePostFromText(update, telegramUsername, messageText);
+                                handleCreatePostFromText(update, user, messageText);
                             } else if (isWaitingForPassword(chatId, user)) {
-                                handleSetPasswordFromText(update, telegramUsername, messageText);
+                                handleSetPasswordFromText(update, user, messageText);
                             } else {
                                 sendMessage(chatId, "Неизвестная команда. Используйте кнопки меню или команду /start.", getMainMenuKeyboard());
                             }
@@ -122,32 +139,22 @@ public class AutoPostBot extends TelegramLongPollingBot {
                 e.printStackTrace();
             }
         } else if (update.hasMessage()) {
-            String telegramUsername = update.getMessage().getFrom().getUserName();
-            if (telegramUsername == null) {
-                try {
-                    sendMessage(update.getMessage().getChatId(), "Ошибка: ваш Telegram username не установлен. Установите username в настройках Telegram.", getMainMenuKeyboard());
-                } catch (TelegramApiException e) {
-                    e.printStackTrace();
-                }
-                return;
-            }
-            telegramUsername = telegramUsername.replace("@", "");
             if (update.getMessage().hasPhoto()) {
-                handleMediaMessage(update, "photo", telegramUsername);
+                handleMediaMessage(update, "photo", user);
             } else if (update.getMessage().hasVideo()) {
-                handleMediaMessage(update, "video", telegramUsername);
+                handleMediaMessage(update, "video", user);
             } else if (update.getMessage().hasSticker()) {
-                handleMediaMessage(update, "sticker", telegramUsername);
+                handleMediaMessage(update, "sticker", user);
             } else if (update.getMessage().hasAudio()) {
-                handleMediaMessage(update, "audio", telegramUsername);
+                handleMediaMessage(update, "audio", user);
             } else if (update.getMessage().hasDocument()) {
-                handleMediaMessage(update, "document", telegramUsername);
+                handleMediaMessage(update, "document", user);
             } else if (update.getMessage().hasAnimation()) {
-                handleMediaMessage(update, "animation", telegramUsername);
+                handleMediaMessage(update, "animation", user);
             } else if (update.getMessage().hasVoice()) {
-                handleMediaMessage(update, "voice", telegramUsername);
+                handleMediaMessage(update, "voice", user);
             } else if (update.getMessage().hasVideoNote()) {
-                handleMediaMessage(update, "video_note", telegramUsername);
+                handleMediaMessage(update, "video_note", user);
             }
         }
     }
@@ -187,17 +194,16 @@ public class AutoPostBot extends TelegramLongPollingBot {
     }
 
     private boolean isWaitingForPost(Long chatId, User user) {
-        // Здесь можно добавить логику для проверки состояния, если нужно отслеживать, ожидает ли бот поста
-        // Для простоты считаем, что если пользователь недавно нажал "Создать пост", он отправляет пост
-        return true; // Упрощение, можно доработать с состоянием
+        // Упрощённая логика, можно доработать с состоянием
+        return true;
     }
 
     private boolean isWaitingForPassword(Long chatId, User user) {
-        // Аналогично, проверка состояния для пароля
-        return true; // Упрощение, можно доработать с состоянием
+        // Упрощённая логика, можно доработать с состоянием
+        return true;
     }
 
-    private void handleAddChannel(Update update, String telegramUsername) throws TelegramApiException {
+    private void handleAddChannel(Update update, User user) throws TelegramApiException {
         String[] parts = update.getMessage().getText().split(" ");
         Long chatId = update.getMessage().getChatId();
         Long telegramId = update.getMessage().getFrom().getId();
@@ -218,13 +224,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
             return;
         }
 
-        User user = userRepository.findByTelegramUsername(telegramUsername)
-                .orElseGet(() -> {
-                    User newUser = new User();
-                    newUser.setTelegramUsername(telegramUsername);
-                    return userRepository.save(newUser);
-                });
-
         Optional<Channel> existingChannel = channelRepository.findByUserId(user.getId());
         existingChannel.ifPresent(channelRepository::delete);
 
@@ -235,11 +234,8 @@ public class AutoPostBot extends TelegramLongPollingBot {
         sendMessage(chatId, "Канал " + channelName + " успешно добавлен! Предыдущий канал (если был) удалён.", getMainMenuKeyboard());
     }
 
-    private void handleDeleteChannel(Update update, String telegramUsername) throws TelegramApiException {
+    private void handleDeleteChannel(Update update, User user) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
-
-        User user = userRepository.findByTelegramUsername(telegramUsername)
-                .orElseThrow(() -> new IllegalArgumentException("Пользователь не найден!"));
 
         Optional<Channel> channel = channelRepository.findByUserId(user.getId());
         if (channel.isPresent()) {
@@ -250,7 +246,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
         }
     }
 
-    private void handleSetPassword(Update update, String telegramUsername) throws TelegramApiException {
+    private void handleSetPassword(Update update, User user) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
         String[] parts = update.getMessage().getText().split(" ", 2);
 
@@ -260,25 +256,18 @@ public class AutoPostBot extends TelegramLongPollingBot {
         }
 
         String password = parts[1];
-        handleSetPasswordFromText(update, telegramUsername, password);
+        handleSetPasswordFromText(update, user, password);
     }
 
-    private void handleSetPasswordFromText(Update update, String telegramUsername, String password) throws TelegramApiException {
+    private void handleSetPasswordFromText(Update update, User user, String password) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
-
-        User user = userRepository.findByTelegramUsername(telegramUsername)
-                .orElseGet(() -> {
-                    User newUser = new User();
-                    newUser.setTelegramUsername(telegramUsername);
-                    return userRepository.save(newUser);
-                });
 
         user.setPassword(password);
         userRepository.save(user);
         sendMessage(chatId, "Пароль успешно установлен! Используйте его для входа на сайт.", getMainMenuKeyboard());
     }
 
-    private void handleCreatePost(Update update, String telegramUsername) throws TelegramApiException {
+    private void handleCreatePost(Update update, User user) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
         String messageText = update.getMessage().getText();
 
@@ -289,10 +278,10 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
         String dateTimeStr = messageText.substring(messageText.length() - 16);
         String content = messageText.substring("/createpost".length(), messageText.length() - 16).trim();
-        handleCreatePostFromText(update, telegramUsername, content + " " + dateTimeStr);
+        handleCreatePostFromText(update, user, content + " " + dateTimeStr);
     }
 
-    private void handleCreatePostFromText(Update update, String telegramUsername, String messageText) throws TelegramApiException {
+    private void handleCreatePostFromText(Update update, User user, String messageText) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
 
         if (messageText.length() < 16) {
@@ -305,9 +294,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
         try {
             LocalDateTime publishTime = LocalDateTime.parse(dateTimeStr, formatter);
-
-            User user = userRepository.findByTelegramUsername(telegramUsername)
-                    .orElseThrow(() -> new IllegalArgumentException("Пользователь не найден!"));
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
             if (channel.isEmpty()) {
@@ -327,7 +313,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
         }
     }
 
-    private void handleMediaMessage(Update update, String mediaType, String telegramUsername) {
+    private void handleMediaMessage(Update update, String mediaType, User user) {
         Long chatId = update.getMessage().getChatId();
         String fileId;
         String caption = update.getMessage().getCaption() != null ? update.getMessage().getCaption() : "";
@@ -346,9 +332,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
         try {
             LocalDateTime publishTime = LocalDateTime.parse(dateTimeStr, formatter);
-
-            User user = userRepository.findByTelegramUsername(telegramUsername)
-                    .orElseThrow(() -> new IllegalArgumentException("Пользователь не найден!"));
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
             if (channel.isEmpty()) {
@@ -502,6 +485,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
         message.setReplyMarkup(keyboard);
         execute(message);
     }
+
     private void sendMessage(Long chatId, String text, ReplyKeyboardMarkup keyboard, String mode) throws TelegramApiException {
         SendMessage message = new SendMessage();
         message.setChatId(chatId);

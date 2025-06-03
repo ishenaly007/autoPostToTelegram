@@ -17,6 +17,7 @@ public class User {
     private String telegramUsername; // Изменено с telegramId на telegramUsername
 
     private String password;
+    private Long telegramId;
 
     @OneToMany(mappedBy = "user")
     @JsonIgnore // Игнорируем каналы при сериализации
