@@ -24,6 +24,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -47,6 +49,8 @@ public class AutoPostBot extends TelegramLongPollingBot {
     private PostMessageRepository postMessageRepository;
 
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+    private static final ZoneId BISHKEK_ZONE = ZoneId.of("Asia/Bishkek");
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
     @Override
     public String getBotUsername() {
@@ -70,7 +74,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
                 ? update.getMessage().getFrom().getUserName().replace("@", "")
                 : null;
 
-        // Поиск или создание пользователя по telegramId
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseGet(() -> {
                     User newUser = new User();
@@ -79,13 +82,11 @@ public class AutoPostBot extends TelegramLongPollingBot {
                     return userRepository.save(newUser);
                 });
 
-        // Обновляем username, если он изменился
         if (telegramUsername != null && !telegramUsername.equals(user.getTelegramUsername())) {
             user.setTelegramUsername(telegramUsername);
             userRepository.save(user);
         }
 
-        // Проверка на отсутствие username, если требуется
         if (telegramUsername == null && update.getMessage().hasText()) {
             try {
                 sendMessage(chatId, "Внимание: ваш Telegram username не установлен. Некоторые функции могут быть ограничены. Установите username в настройках Telegram.", getMainMenuKeyboard());
@@ -98,7 +99,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
             String messageText = update.getMessage().getText();
 
             try {
-                // Обработка команд и кнопок
                 switch (messageText) {
                     case "/start":
                     case "Вернуться в меню":
@@ -194,12 +194,10 @@ public class AutoPostBot extends TelegramLongPollingBot {
     }
 
     private boolean isWaitingForPost(Long chatId, User user) {
-        // Упрощённая логика, можно доработать с состоянием
         return true;
     }
 
     private boolean isWaitingForPassword(Long chatId, User user) {
-        // Упрощённая логика, можно доработать с состоянием
         return true;
     }
 
@@ -293,7 +291,11 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = messageText.substring(0, messageText.length() - 16).trim();
 
         try {
-            LocalDateTime publishTime = LocalDateTime.parse(dateTimeStr, formatter);
+            // Парсим время в часовом поясе Бишкека
+            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(dateTimeStr + " +06:00",
+                    formatter.withZone(BISHKEK_ZONE));
+            // Конвертируем в UTC для хранения
+            ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
             if (channel.isEmpty()) {
@@ -304,12 +306,12 @@ public class AutoPostBot extends TelegramLongPollingBot {
             PostMessage post = new PostMessage();
             post.setChannel(channel.get());
             post.setContent(content);
-            post.setPublishTime(publishTime);
+            post.setPublishTime(publishTimeUtc.toLocalDateTime());
             postMessageRepository.save(post);
 
-            sendMessage(chatId, "Пост успешно создан и будет опубликован " + dateTimeStr, getMainMenuKeyboard());
+            sendMessage(chatId, "Пост успешно создан и будет опубликован " + dateTimeStr + " (Asia/Bishkek)", getMainMenuKeyboard());
         } catch (DateTimeParseException e) {
-            sendMessage(chatId, "Неверный формат даты! Используйте: dd.MM.yyyy HH:mm в конце текста", getMainMenuKeyboard());
+            sendMessage(chatId, "Неверный формат даты! Используйте: dd.MM.yyyy HH:mm", getMainMenuKeyboard());
         }
     }
 
@@ -331,7 +333,11 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = caption.substring(0, caption.length() - 16).trim();
 
         try {
-            LocalDateTime publishTime = LocalDateTime.parse(dateTimeStr, formatter);
+            // Парсим время в часовом поясе Бишкека
+            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(dateTimeStr + " +06:00",
+                    formatter.withZone(BISHKEK_ZONE));
+            // Конвертируем в UTC для хранения
+            ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
             if (channel.isEmpty()) {
@@ -375,13 +381,13 @@ public class AutoPostBot extends TelegramLongPollingBot {
             PostMessage post = new PostMessage();
             post.setChannel(channel.get());
             post.setContent(content);
-            post.setPublishTime(publishTime);
+            post.setPublishTime(publishTimeUtc.toLocalDateTime());
             post.setMediaId(fileId);
             post.setMediaType(mediaType);
             postMessageRepository.save(post);
 
             try {
-                sendMessage(chatId, "Медиа-пост (" + mediaType + ") успешно создан и будет опубликован " + dateTimeStr, getMainMenuKeyboard());
+                sendMessage(chatId, "Медиа-пост (" + mediaType + ") успешно создан и будет опубликован " + dateTimeStr + " (Asia/Bishkek)", getMainMenuKeyboard());
             } catch (TelegramApiException e) {
                 e.printStackTrace();
             }
@@ -396,7 +402,8 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
     @Scheduled(fixedRate = 60000)
     public void publishScheduledPosts() {
-        LocalDateTime now = LocalDateTime.now();
+        // Текущее время в UTC
+        LocalDateTime now = ZonedDateTime.now(UTC_ZONE).toLocalDateTime();
         List<PostMessage> posts = postMessageRepository.findByPublishTimeBeforeAndPublishedFalse(now);
 
         for (PostMessage post : posts) {

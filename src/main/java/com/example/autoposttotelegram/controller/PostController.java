@@ -12,7 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -31,6 +32,7 @@ public class PostController {
     private ChannelRepository channelRepository;
 
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+    private static final ZoneId BISHKEK_ZONE = ZoneId.of("Asia/Bishkek");
 
     @Operation(summary = "Получить посты пользователя", description = "Возвращает список неопубликованных постов для канала пользователя.")
     @ApiResponses(value = {
@@ -59,12 +61,16 @@ public class PostController {
         }
 
         try {
-            LocalDateTime publishTime = LocalDateTime.parse(postRequest.getPublishTime(), formatter);
+            // Парсим время в часовом поясе Бишкека
+            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(postRequest.getPublishTime() + " +06:00",
+                    formatter.withZone(BISHKEK_ZONE));
+            // Конвертируем в UTC для хранения в базе
+            ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(ZoneId.of("UTC"));
 
             PostMessage post = new PostMessage();
             post.setChannel(channel.get());
             post.setContent(postRequest.getContent());
-            post.setPublishTime(publishTime);
+            post.setPublishTime(publishTimeUtc.toLocalDateTime()); // Сохраняем в UTC
             postMessageRepository.save(post);
             return ResponseEntity.ok(post);
         } catch (DateTimeParseException e) {
