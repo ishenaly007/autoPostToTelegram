@@ -20,7 +20,7 @@ public class SwaggerConfig {
                         .description("API для управления постами и авторизацией в Telegram"))
                 .servers(List.of(
                         new Server()
-                                .url("https://ab1t.top/api")
+                                .url("https://ab1t.top")
                                 .description("Production server")
                 ));
     }
