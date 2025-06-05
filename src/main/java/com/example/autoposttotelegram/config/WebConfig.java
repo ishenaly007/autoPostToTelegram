@@ -15,7 +15,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "https://ab1t.top"));
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "https://ab1t.top",
+                "https://ab1t.top:443",  // Для явного указания порта HTTPS
+                "http://localhost:8087"   // Для локального тестирования Swagger
+        ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
