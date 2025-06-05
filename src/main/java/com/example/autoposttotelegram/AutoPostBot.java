@@ -291,9 +291,10 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = messageText.substring(0, messageText.length() - 16).trim();
 
         try {
-            // Парсим время в часовом поясе Бишкека
-            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(dateTimeStr + " +06:00",
-                    formatter.withZone(BISHKEK_ZONE));
+            // Парсим время как LocalDateTime
+            LocalDateTime publishTimeLocal = LocalDateTime.parse(dateTimeStr, formatter);
+            // Применяем часовой пояс Бишкека
+            ZonedDateTime publishTimeBishkek = publishTimeLocal.atZone(BISHKEK_ZONE);
             // Конвертируем в UTC для хранения
             ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
@@ -311,7 +312,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
             sendMessage(chatId, "Пост успешно создан и будет опубликован " + dateTimeStr + " (Asia/Bishkek)", getMainMenuKeyboard());
         } catch (DateTimeParseException e) {
-            sendMessage(chatId, "Неверный формат даты! Используйте: dd.MM.yyyy HH:mm", getMainMenuKeyboard());
+            sendMessage(chatId, "Неверный формат даты! Используйте: dd.MM.yyyy HH:mm (например, 25.12.2025 14:30)", getMainMenuKeyboard());
         }
     }
 
@@ -333,9 +334,10 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = caption.substring(0, caption.length() - 16).trim();
 
         try {
-            // Парсим время в часовом поясе Бишкека
-            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(dateTimeStr + " +06:00",
-                    formatter.withZone(BISHKEK_ZONE));
+            // Парсим время как LocalDateTime
+            LocalDateTime publishTimeLocal = LocalDateTime.parse(dateTimeStr, formatter);
+            // Применяем часовой пояс Бишкека
+            ZonedDateTime publishTimeBishkek = publishTimeLocal.atZone(BISHKEK_ZONE);
             // Конвертируем в UTC для хранения
             ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
@@ -393,7 +395,7 @@ public class AutoPostBot extends TelegramLongPollingBot {
             }
         } catch (DateTimeParseException e) {
             try {
-                sendMessage(chatId, "Неверный формат даты! Подпись должна заканчиваться: dd.MM.yyyy HH:mm", getMainMenuKeyboard());
+                sendMessage(chatId, "Неверный формат даты! Подпись должна заканчиваться: dd.MM.yyyy HH:mm (например, 25.12.2025 14:30)", getMainMenuKeyboard());
             } catch (TelegramApiException e1) {
                 e1.printStackTrace();
             }

@@ -12,8 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.ZonedDateTime;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -33,6 +34,7 @@ public class PostController {
 
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private static final ZoneId BISHKEK_ZONE = ZoneId.of("Asia/Bishkek");
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
 
     @Operation(summary = "Получить посты пользователя", description = "Возвращает список неопубликованных постов для канала пользователя.")
     @ApiResponses(value = {
@@ -61,20 +63,20 @@ public class PostController {
         }
 
         try {
-            // Парсим время в часовом поясе Бишкека
-            ZonedDateTime publishTimeBishkek = ZonedDateTime.parse(postRequest.getPublishTime() + " +06:00",
-                    formatter.withZone(BISHKEK_ZONE));
+            LocalDateTime publishTimeLocal = LocalDateTime.parse(postRequest.getPublishTime(), formatter);
+            // Применяем часовой пояс Бишкека
+            ZonedDateTime publishTimeBishkek = publishTimeLocal.atZone(BISHKEK_ZONE);
             // Конвертируем в UTC для хранения в базе
-            ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(ZoneId.of("UTC"));
+            ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
             PostMessage post = new PostMessage();
             post.setChannel(channel.get());
             post.setContent(postRequest.getContent());
-            post.setPublishTime(publishTimeUtc.toLocalDateTime()); // Сохраняем в UTC
+            post.setPublishTime(publishTimeUtc.toLocalDateTime());
             postMessageRepository.save(post);
             return ResponseEntity.ok(post);
         } catch (DateTimeParseException e) {
-            return ResponseEntity.badRequest().body("Неверный формат даты! Используйте: dd.MM.yyyy HH:mm");
+            return ResponseEntity.badRequest().body("Неверный формат даты! Используйте: dd.MM.yyyy HH:mm (например, 25.12.2025 14:30)");
         }
     }
 
