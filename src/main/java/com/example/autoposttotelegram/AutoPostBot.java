@@ -29,7 +29,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -51,6 +53,9 @@ public class AutoPostBot extends TelegramLongPollingBot {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private static final ZoneId BISHKEK_ZONE = ZoneId.of("Asia/Bishkek");
     private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
+
+    // Хранилище состояния пользователя
+    private final Map<Long, String> userState = new HashMap<>();
 
     @Override
     public String getBotUsername() {
@@ -97,71 +102,86 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
         if (update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
+            String currentState = userState.getOrDefault(chatId, "");
 
             try {
-                switch (messageText) {
-                    case "/start":
-                    case "Вернуться в меню":
-                        sendMainMenu(chatId);
-                        break;
-                    case "Добавить канал":
-                        sendMessage(chatId, "Введите ID канала в формате: @ChannelName", getMainMenuKeyboard());
-                        break;
-                    case "Удалить канал":
-                        handleDeleteChannel(update, user);
-                        break;
-                    case "Создать пост":
-                        sendMessage(chatId, "Введите текст поста и дату публикации в формате: <текст> dd.MM.yyyy HH:mm\nИли отправьте медиа с подписью в таком же формате.", getMainMenuKeyboard());
-                        break;
-                    case "Установить пароль":
-                        sendMessage(chatId, "Введите пароль для входа на сайт.", getMainMenuKeyboard());
-                        break;
-                    default:
-                        if (messageText.startsWith("/addchannel") || messageText.startsWith("@")) {
-                            handleAddChannel(update, user);
-                        } else if (messageText.startsWith("/del")) {
+                if (currentState.equals("WAITING_FOR_PASSWORD")) {
+                    handleSetPasswordFromText(update, user, messageText);
+                    userState.remove(chatId);
+                } else if (currentState.equals("WAITING_FOR_POST")) {
+                    handleCreatePostFromText(update, user, messageText);
+                    userState.remove(chatId);
+                } else {
+                    switch (messageText) {
+                        case "/start":
+                        case "Вернуться в меню":
+                            userState.remove(chatId);
+                            sendMainMenu(chatId);
+                            break;
+                        case "Добавить канал":
+                            userState.remove(chatId);
+                            sendMessage(chatId, "Введите ID канала в формате: @ChannelName", getMainMenuKeyboard());
+                            break;
+                        case "Удалить канал":
+                            userState.remove(chatId);
                             handleDeleteChannel(update, user);
-                        } else if (messageText.startsWith("/createpost")) {
-                            handleCreatePost(update, user);
-                        } else if (messageText.startsWith("/password")) {
-                            handleSetPassword(update, user);
-                        } else {
-                            if (isWaitingForPost(chatId, user)) {
-                                handleCreatePostFromText(update, user, messageText);
-                            } else if (isWaitingForPassword(chatId, user)) {
-                                handleSetPasswordFromText(update, user, messageText);
+                            break;
+                        case "Создать пост":
+                            userState.put(chatId, "WAITING_FOR_POST");
+                            sendMessage(chatId, "Введите текст поста и дату публикации в формате: <текст> dd.MM.yyyy HH:mm\nИли отправьте медиа с подписью в таком же формате.", getMainMenuKeyboard());
+                            break;
+                        case "Установить пароль":
+                            userState.put(chatId, "WAITING_FOR_PASSWORD");
+                            sendMessage(chatId, "Введите пароль для входа на сайт.", getMainMenuKeyboard());
+                            break;
+                        default:
+                            if (messageText.startsWith("/addchannel") || messageText.startsWith("@")) {
+                                userState.remove(chatId);
+                                handleAddChannel(update, user);
+                            } else if (messageText.startsWith("/del")) {
+                                userState.remove(chatId);
+                                handleDeleteChannel(update, user);
+                            } else if (messageText.startsWith("/createpost")) {
+                                userState.put(chatId, "WAITING_FOR_POST");
+                                handleCreatePost(update, user);
+                            } else if (messageText.startsWith("/password")) {
+                                userState.put(chatId, "WAITING_FOR_PASSWORD");
+                                handleSetPassword(update, user);
                             } else {
                                 sendMessage(chatId, "Неизвестная команда. Используйте кнопки меню или команду /start.", getMainMenuKeyboard());
                             }
-                        }
+                    }
                 }
             } catch (TelegramApiException e) {
                 e.printStackTrace();
             }
         } else if (update.hasMessage()) {
-            if (update.getMessage().hasPhoto()) {
-                handleMediaMessage(update, "photo", user);
-            } else if (update.getMessage().hasVideo()) {
-                handleMediaMessage(update, "video", user);
-            } else if (update.getMessage().hasSticker()) {
-                handleMediaMessage(update, "sticker", user);
-            } else if (update.getMessage().hasAudio()) {
-                handleMediaMessage(update, "audio", user);
-            } else if (update.getMessage().hasDocument()) {
-                handleMediaMessage(update, "document", user);
-            } else if (update.getMessage().hasAnimation()) {
-                handleMediaMessage(update, "animation", user);
-            } else if (update.getMessage().hasVoice()) {
-                handleMediaMessage(update, "voice", user);
-            } else if (update.getMessage().hasVideoNote()) {
-                handleMediaMessage(update, "video_note", user);
+            String currentState = userState.getOrDefault(chatId, "");
+            if (currentState.equals("WAITING_FOR_POST")) {
+                if (update.getMessage().hasPhoto()) {
+                    handleMediaMessage(update, "photo", user);
+                } else if (update.getMessage().hasVideo()) {
+                    handleMediaMessage(update, "video", user);
+                } else if (update.getMessage().hasSticker()) {
+                    handleMediaMessage(update, "sticker", user);
+                } else if (update.getMessage().hasAudio()) {
+                    handleMediaMessage(update, "audio", user);
+                } else if (update.getMessage().hasDocument()) {
+                    handleMediaMessage(update, "document", user);
+                } else if (update.getMessage().hasAnimation()) {
+                    handleMediaMessage(update, "animation", user);
+                } else if (update.getMessage().hasVoice()) {
+                    handleMediaMessage(update, "voice", user);
+                } else if (update.getMessage().hasVideoNote()) {
+                    handleMediaMessage(update, "video_note", user);
+                }
+                userState.remove(chatId);
             }
         }
     }
 
     private void sendMainMenu(Long chatId) throws TelegramApiException {
         String welcomeMessage = "Привет! Я бот для автоматизации постинга в Telegram-каналы.\n\n" +
-                                "Что я умею:\n" +
                                 "*• Добавить канал* — привяжите канал, где вы админ.\n" +
                                 "*• Удалить канал* — отвяжите текущий канал.\n" +
                                 "*• Создать пост* — запланируйте текстовый или медиа-пост (фото, видео и т.д.) с указанием даты и времени (dd.MM.yyyy HH:mm).\n" +
@@ -172,7 +192,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
     private ReplyKeyboardMarkup getMainMenuKeyboard() {
         ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
-        keyboardMarkup.setResizeKeyboard(true);
         List<KeyboardRow> keyboard = new ArrayList<>();
 
         KeyboardRow row1 = new KeyboardRow();
@@ -191,14 +210,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
         keyboard.add(row3);
         keyboardMarkup.setKeyboard(keyboard);
         return keyboardMarkup;
-    }
-
-    private boolean isWaitingForPost(Long chatId, User user) {
-        return true;
-    }
-
-    private boolean isWaitingForPassword(Long chatId, User user) {
-        return true;
     }
 
     private void handleAddChannel(Update update, User user) throws TelegramApiException {
@@ -246,19 +257,17 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
     private void handleSetPassword(Update update, User user) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
-        String[] parts = update.getMessage().getText().split(" ", 2);
-
-        if (parts.length < 2) {
-            sendMessage(chatId, "Пожалуйста, укажите пароль. Формат: /password <пароль>", getMainMenuKeyboard());
-            return;
-        }
-
-        String password = parts[1];
-        handleSetPasswordFromText(update, user, password);
+        userState.put(chatId, "WAITING_FOR_PASSWORD");
+        sendMessage(chatId, "Пожалуйста, укажите пароль.", getMainMenuKeyboard());
     }
 
     private void handleSetPasswordFromText(Update update, User user, String password) throws TelegramApiException {
         Long chatId = update.getMessage().getChatId();
+
+        if (password.trim().isEmpty()) {
+            sendMessage(chatId, "Пароль не может быть пустым. Пожалуйста, введите пароль.", getMainMenuKeyboard());
+            return;
+        }
 
         user.setPassword(password);
         userRepository.save(user);
@@ -291,11 +300,8 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = messageText.substring(0, messageText.length() - 16).trim();
 
         try {
-            // Парсим время как LocalDateTime
             LocalDateTime publishTimeLocal = LocalDateTime.parse(dateTimeStr, formatter);
-            // Применяем часовой пояс Бишкека
             ZonedDateTime publishTimeBishkek = publishTimeLocal.atZone(BISHKEK_ZONE);
-            // Конвертируем в UTC для хранения
             ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
@@ -334,11 +340,8 @@ public class AutoPostBot extends TelegramLongPollingBot {
         String content = caption.substring(0, caption.length() - 16).trim();
 
         try {
-            // Парсим время как LocalDateTime
             LocalDateTime publishTimeLocal = LocalDateTime.parse(dateTimeStr, formatter);
-            // Применяем часовой пояс Бишкека
             ZonedDateTime publishTimeBishkek = publishTimeLocal.atZone(BISHKEK_ZONE);
-            // Конвертируем в UTC для хранения
             ZonedDateTime publishTimeUtc = publishTimeBishkek.withZoneSameInstant(UTC_ZONE);
 
             Optional<Channel> channel = channelRepository.findByUserId(user.getId());
@@ -404,7 +407,6 @@ public class AutoPostBot extends TelegramLongPollingBot {
 
     @Scheduled(fixedRate = 60000)
     public void publishScheduledPosts() {
-        // Текущее время в UTC
         LocalDateTime now = ZonedDateTime.now(UTC_ZONE).toLocalDateTime();
         List<PostMessage> posts = postMessageRepository.findByPublishTimeBeforeAndPublishedFalse(now);
 
